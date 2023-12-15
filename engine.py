@@ -31,11 +31,31 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     # for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
     for _ in metric_logger.log_every(range(len(data_loader)), print_freq, header):
+        tensorss, masks = samples.decompose()
+        #print("\ntensorss",tensorss.shape,"masks",masks.shape,"len(targets)",len(targets),"targets",targets)
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        #print("\nlen(targets)",len(targets),"devicetargets",targets)
         meta_info = {
             'size': torch.stack([t['size'][[1,0]] for t in targets]),  # (bs, 2)  W, H
         }
+        #print("meta_info",meta_info)
+        # tensorss torch.Size([2, 3, 649, 719]) masks torch.Size([2, 649, 719]) len(targets) 2 targets [{'boxes': tensor([[0.5135, 0.6438, 0.5922, 0.7079],
+        #         [0.9075, 0.2632, 0.1850, 0.3718],
+        #         [0.6180, 0.5522, 0.4735, 0.8957],
+        #         [0.4745, 0.4449, 0.3493, 0.8225],
+        #         [0.7242, 0.4787, 0.2519, 0.3641]], device='cuda:0'), 'labels': tensor([ 4,  1,  1,  1, 31], device='cuda:0'), 'image_id': tensor([122863], device='cuda:0'), 'area': tensor([55191.2070, 12934.5000, 37989.3086, 42231.8359,  3185.3691],
+        #     device='cuda:0'), 'iscrowd': tensor([0, 0, 0, 0, 0], device='cuda:0'), 'orig_size': tensor([427, 640], device='cuda:0'), 'size': tensor([480, 719], device='cuda:0')}, {'boxes': tensor([[0.0085, 0.9647, 0.0171, 0.0707]], device='cuda:0'), 'labels': tensor([1], device='cuda:0'), 'image_id': tensor([561289], device='cuda:0'), 'area': tensor([476.3877], device='cuda:0'), 'iscrowd': tensor([0], device='cuda:0'), 'orig_size': tensor([640, 386], device='cuda:0'), 'size': tensor([649, 608], device='cuda:0')}]
+
+        # len(targets) 2 devicetargets [{'boxes': tensor([[0.5135, 0.6438, 0.5922, 0.7079],
+        #         [0.9075, 0.2632, 0.1850, 0.3718],
+        #         [0.6180, 0.5522, 0.4735, 0.8957],
+        #         [0.4745, 0.4449, 0.3493, 0.8225],
+        #         [0.7242, 0.4787, 0.2519, 0.3641]], device='cuda:0'), 'labels': tensor([ 4,  1,  1,  1, 31], device='cuda:0'), 'image_id': tensor([122863], device='cuda:0'), 'area': tensor([55191.2070, 12934.5000, 37989.3086, 42231.8359,  3185.3691],
+        #     device='cuda:0'), 'iscrowd': tensor([0, 0, 0, 0, 0], device='cuda:0'), 'orig_size': tensor([427, 640], device='cuda:0'), 'size': tensor([480, 719], device='cuda:0')}, {'boxes': tensor([[0.0085, 0.9647, 0.0171, 0.0707]], device='cuda:0'), 'labels': tensor([1], device='cuda:0'), 'image_id': tensor([561289], device='cuda:0'), 'area': tensor([476.3877], device='cuda:0'), 'iscrowd': tensor([0], device='cuda:0'), 'orig_size': tensor([640, 386], device='cuda:0'), 'size': tensor([649, 608], device='cuda:0')}]
+        # meta_info {'size': tensor([[719, 480],
+        #         [608, 649]], device='cuda:0')}
+
 
         outputs = model(samples, meta_info)
         loss_dict = criterion(outputs, targets)

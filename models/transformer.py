@@ -65,6 +65,9 @@ class Transformer(nn.Module):
 
         self.d_model = d_model
         self.nhead = nhead
+        self.decoder.ref_point_head= MLP(d_model, d_model, output_dim=2, num_layers=2)
+        self.decoder.bbox_embed = MLP(d_model, d_model, 4, 3)
+        self.decoder.bbox_embed = _get_clones(self.decoder.bbox_embed, num_decoder_layers)
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -72,6 +75,9 @@ class Transformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src, mask, query_embed, pos_embed, meta_info=None, ms_feats=None):
+        #print("transforemr input")
+        #print("src",src.shape,"mask",mask.shape,"pos_embed",pos_embed.shape,"query_embed",query_embed.shape)
+        #print("ms_feats",ms_feats)
         # flatten NxCxHxW to HWxNxC
         meta_info['src_size'] = src.shape
         bs, c, h, w = src.shape
@@ -204,6 +210,7 @@ class TransformerDecoder(nn.Module):
         memory_pos_2d = memory_pos.permute(1, 2, 0).view(bs, 2*c, h, w)
 
         if ms_feats is not None:
+            #print("ms_feats[2]",ms_feats[2].shape,"memory_pos_2d",memory_pos_2d.shape)
             assert ms_feats[2].shape == memory_pos_2d.shape
             ms_feats[2] = memory_pos_2d
             feat2pool = ms_feats
@@ -296,6 +303,14 @@ class TransformerDecoder(nn.Module):
 
             # update output feature here by roi align  (Nk_new, B*Nq, dim)
             roi_bbox = coord_norm.detach()
+            # print("memory_full",memory_full.shape,"pos_full",pos_full.shape,"roi_bbox",roi_bbox.shape,"ms_feats",len(ms_feats))
+            # for msfeat in ms_feats:
+            #     print("msfeat",msfeat.shape)
+            # memory_full torch.Size([442, 2, 256]) pos_full torch.Size([442, 2, 256]) roi_bbox torch.Size([2, 300, 4]) ms_feats 3
+            # msfeat torch.Size([2, 512, 68, 102])
+            # msfeat torch.Size([2, 512, 34, 51])
+            # msfeat torch.Size([2, 512, 17, 26])
+
             memory, pos = self.update_memory_with_roi(memory_full, pos_full, roi_bbox, meta_info, ms_feats=ms_feats)
             # make memory_key_padding_mask
             memory_key_padding_mask = torch.zeros(

@@ -150,7 +150,17 @@ class DETR(nn.Module):
             srcs, masks, pos = srcs[2], masks[2], pos[2]
         else:
             raise NotImplementedError
-
+        # print("***transformer input")
+        # print("srcs",srcs.shape,"masks",masks.shape,"self.query_embed.weight",self.query_embed.weight.shape,"pos",pos.shape)
+        # print("meta_info",meta_info)
+        # for ms_feat in ms_feats:
+        #     print("ms_feat",ms_feat.shape)
+        # srcs torch.Size([2, 256, 20, 27]) masks torch.Size([2, 20, 27]) self.query_embed.weight torch.Size([300, 256]) pos torch.Size([2, 256, 20, 27])
+        # meta_info {'size': tensor([[853, 640],
+        #         [768, 608]], device='cuda:0')}
+        # ms_feat torch.Size([2, 512, 80, 107])
+        # ms_feat torch.Size([2, 512, 40, 54])
+        # ms_feat torch.Size([2, 512, 20, 27])
         hs, memory, outputs_coord = self.transformer(
             srcs, masks, self.query_embed.weight, pos, meta_info=meta_info, ms_feats=ms_feats,
         )
@@ -331,18 +341,18 @@ class SetCriterion(nn.Module):
                     repeat_rand = num_fore % num_inst if num_fore is not None else None
                     targets[batch_idx]['boxes'] = targets[batch_idx]['boxes'].repeat(repeat_time, 1)
                     targets[batch_idx]['labels'] = targets[batch_idx]['labels'].repeat(repeat_time)
-                    targets[batch_idx]['area'] = targets[batch_idx]['area'].repeat(repeat_time)
-                    targets[batch_idx]['iscrowd'] = targets[batch_idx]['iscrowd'].repeat(repeat_time)
+                    #targets[batch_idx]['area'] = targets[batch_idx]['area'].repeat(repeat_time)
+                    #targets[batch_idx]['iscrowd'] = targets[batch_idx]['iscrowd'].repeat(repeat_time)
                     if repeat_rand is not None:
                         sample_idx = torch.randperm(num_inst, device=targets[batch_idx]['boxes'].device)[:repeat_rand]
                         targets[batch_idx]['boxes'] = torch.cat(
                             [targets[batch_idx]['boxes'], targets[batch_idx]['boxes'][sample_idx]], dim=0)
                         targets[batch_idx]['labels'] = torch.cat(
                             [targets[batch_idx]['labels'], targets[batch_idx]['labels'][sample_idx]], dim=0)
-                        targets[batch_idx]['area'] = torch.cat(
-                            [targets[batch_idx]['area'], targets[batch_idx]['area'][sample_idx]], dim=0)
-                        targets[batch_idx]['iscrowd'] = torch.cat(
-                            [targets[batch_idx]['iscrowd'], targets[batch_idx]['iscrowd'][sample_idx]], dim=0)
+                        # targets[batch_idx]['area'] = torch.cat(
+                        #     [targets[batch_idx]['area'], targets[batch_idx]['area'][sample_idx]], dim=0)
+                        # targets[batch_idx]['iscrowd'] = torch.cat(
+                        #     [targets[batch_idx]['iscrowd'], targets[batch_idx]['iscrowd'][sample_idx]], dim=0)
                     # create repeat label. Note 0 for repeated while 1 for not repeated
                     targets[batch_idx]['repeat'] = torch.zeros(num_inst * repeat_time, dtype=torch.int64,
                                                                device=targets[batch_idx]['labels'].device)

@@ -16,17 +16,31 @@ import datasets.samplers as samplers
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
+from datasets.exdark import ExdarkDetection,make_train_transforms,make_test_transforms
 
 import os
 import wandb
 import warnings
 
+#python -m torch.distributed.launch --nproc_per_node=2 --master_port=29501 --use_env main.py --dataset_file cocodown --coco_path data/coco --sample_rate 0.01 --batch_size 4 --model dela-detr --repeat_label 2 --nms --num_queries 300 --wandb
+#python main.py --model dela-detr 
+# Namespace(aux_loss=True, backbone='resnet50', batch_size=2, bbox_loss_coef=5, box_refine=True, cache_mode=False, 
+# clip_max_norm=0.1, coco_panoptic_path=None, coco_path='/root/autodl-tmp/COCO', dataset_file='cocodown', dec_layers=6, 
+# device='cuda', dice_loss_coef=1, dilation=False, dim_feedforward=2048, dist_url='env://', distributed=False, 
+# dropout=0.1, enc_layers=6, eos_coef=0.1, epochs=50, eval=False, frozen_weights=None, giou_loss_coef=2, hidden_dim=256, 
+# init_ref_dim=2, lr=0.0001, lr_backbone=1e-05, lr_drop=40, mask_loss_coef=1, masks=False, model='dela-detr', ms_roi=True,
+#  nheads=8, nms=False, nms_remove=0.01, nms_thresh=0.7, num_feature_levels=3, num_queries=300, num_workers=2, 
+# output_dir=None, pool_res=4, position_embedding='sine', pre_norm=False, remove_difficult=False, repeat_label=2, 
+# repeat_ratio=None, resume='', sample_rate=0.01, sample_repeat=False, seed=None, set_cost_bbox=5, set_cost_class=1, 
+# set_cost_giou=2, start_epoch=0, two_stage_match=False, wandb=False, weight_decay=0.0001, world_size=1)
+# main.py:182: UserWarning: wandb is turned off
+#   warnings.warn("wandb is turned off")
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
     parser.add_argument('--wandb', action='store_true', help="turn on wandb for logging")
     # label augmentation
-    parser.add_argument('--repeat_label', type=int, default=None, help="repeat positive labels for n times")
+    parser.add_argument('--repeat_label', type=int, default=2, help="repeat positive labels for n times")
     parser.add_argument('--repeat_ratio', type=float, default=None,
                         help="resample positive labels to make pos:all=ratio, e.g. 0.25")
     parser.add_argument('--two_stage_match', action='store_true', help="two stage matching for the repeated label")
@@ -77,7 +91,7 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
-    parser.add_argument('--num_queries', default=100, type=int,
+    parser.add_argument('--num_queries', default=300, type=int,
                         help="Number of query slots")
     parser.add_argument('--pre_norm', action='store_true')
 
@@ -105,12 +119,12 @@ def get_args_parser():
 
     # dataset parameters
     # * down-sample dataset
-    parser.add_argument('--sample_rate', default=None, type=float, help="sample rate for downsampled dataset")
+    parser.add_argument('--sample_rate', default=0.01, type=float, help="sample rate for downsampled dataset")
     parser.add_argument('--sample_repeat', action='store_true',
                         help="repeat the dataset 1/sample_rate times, to maintain the computational cost")
     # * other dataset params
-    parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', type=str)
+    parser.add_argument('--dataset_file', default='cocodown')
+    parser.add_argument('--coco_path',default='/root/autodl-tmp/COCO', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
@@ -201,9 +215,14 @@ def main(args):
                                   weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
-    dataset_train = build_dataset(image_set='train', args=args)
-    dataset_val = build_dataset(image_set='val', args=args)
-
+    #dataset_train = build_dataset(image_set='train', args=args)
+    #dataset_val = build_dataset(image_set='val', args=args)
+    dataset_train = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
+                                 ann_file= '/root/autodl-tmp/Exdark/main/train.txt',
+                                 transforms=make_train_transforms())
+    dataset_val = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
+                                 ann_file= '/root/autodl-tmp/Exdark/main/val.txt',
+                                 transforms=make_test_transforms())
     if args.distributed:
         if args.cache_mode:
             sampler_train = samplers.NodeDistributedSampler(dataset_train)
