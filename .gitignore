@@ -1,6 +1,7 @@
 wandb/
 exps/
 .idea/
+log/
 
 .nfs*
 *.ipynb

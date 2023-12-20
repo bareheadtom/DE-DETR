@@ -204,6 +204,16 @@ def build(image_set, args):
                             cache_mode=args.cache_mode, local_rank=get_local_rank(), local_size=get_local_size())
     return dataset
 
+def build_exdark(image_set, args):
+    PATHS = {
+        "train": ('/root/autodl-tmp/Exdark/JPEGImages/IMGS', '/root/autodl-tmp/Exdark/cocoAnno/instances_exdark_train.json'),
+        "val": ('/root/autodl-tmp/Exdark/JPEGImages/IMGS', '/root/autodl-tmp/Exdark/cocoAnno/instances_exdark_val.json'),
+    }
+    img_folder, ann_file = PATHS[image_set]
+    dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks,
+                            cache_mode=args.cache_mode, local_rank=get_local_rank(), local_size=get_local_size())
+    return dataset
+
 
 def build_downsampled_coco(image_set, args):
     assert args.sample_rate is not None

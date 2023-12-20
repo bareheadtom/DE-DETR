@@ -93,6 +93,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
+import numpy as np
+from terminaltables import AsciiTable
+import itertools
 
 @torch.no_grad()
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir):
@@ -125,6 +128,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         outputs = model(samples, meta_info)
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
+        
+        #print("\ntaregts",targets, "\noutputs:",outputs)
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -138,11 +143,15 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
+        #print("\npostprocessors outputs",outputs)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
+        #print("\npostprocessors outputs",results)
         if 'segm' in postprocessors.keys():
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
             results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
         res = {target['image_id'].item(): output for target, output in zip(targets, results)}
+        #print("\ntaregts",targets, "\noutputs:",outputs)
+        #print("\n*********************coco_evaluator res:",res)
         if coco_evaluator is not None:
             coco_evaluator.update(res)
 
@@ -168,6 +177,44 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     if coco_evaluator is not None:
         coco_evaluator.accumulate()
         coco_evaluator.summarize()
+        # *******add class wise
+        coco_eva = coco_evaluator.coco_eval['bbox']
+        precisions = coco_eva.eval['precision']
+        #print("precisions",precisions.shape)
+        #precisions (10, 101, 12, 4, 3)
+        # precision: (iou, recall, cls, area range, max dets)
+        coco_true = coco_eva.cocoGt
+        cat_ids = sorted(coco_true.getCatIds())
+        assert len(cat_ids) == precisions.shape[2]
+
+        results_per_category = []
+        for idx, catId in enumerate(cat_ids):
+            # area range index 0: all area ranges
+            # max dets index -1: typically 100 per image
+            nm = coco_true.loadCats(catId)[0]
+            precision = precisions[:, :, idx, 0, -1]
+            precision = precision[precision > -1]
+            if precision.size:
+                ap = np.mean(precision)
+            else:
+                ap = float('nan')
+            results_per_category.append(
+                (f'{nm["name"]}', f'{float(ap):0.3f}'))
+
+        num_columns = min(6, len(results_per_category) * 2)
+        results_flatten = list(
+            itertools.chain(*results_per_category))
+        headers = ['category', 'AP'] * (num_columns // 2)
+        results_2d = itertools.zip_longest(*[
+            results_flatten[i::num_columns]
+            for i in range(num_columns)
+        ])
+        table_data = [headers]
+        table_data += [result for result in results_2d]
+        table = AsciiTable(table_data)
+        print('\n' + table.table)
+
+
     panoptic_res = None
     if panoptic_evaluator is not None:
         panoptic_res = panoptic_evaluator.summarize()

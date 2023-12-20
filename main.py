@@ -59,9 +59,9 @@ def get_args_parser():
 
     parser.add_argument('--lr', default=1e-4, type=float)
     parser.add_argument('--lr_backbone', default=1e-5, type=float)
-    parser.add_argument('--batch_size', default=2, type=int)
+    parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--lr_drop', default=40, type=int)
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
@@ -95,6 +95,9 @@ def get_args_parser():
                         help="Number of query slots")
     parser.add_argument('--pre_norm', action='store_true')
 
+    # pre_encoder
+    parser.add_argument('--pre_encoder', action='store_true')
+
     # * Segmentation
     parser.add_argument('--masks', action='store_true',
                         help="Train segmentation head if the flag is provided")
@@ -119,22 +122,24 @@ def get_args_parser():
 
     # dataset parameters
     # * down-sample dataset
-    parser.add_argument('--sample_rate', default=0.01, type=float, help="sample rate for downsampled dataset")
+    parser.add_argument('--sample_rate', default=None, type=float, help="sample rate for downsampled dataset")
+    #parser.add_argument('--sample_rate', default=0.01, type=float, help="sample rate for downsampled dataset")
     parser.add_argument('--sample_repeat', action='store_true',
                         help="repeat the dataset 1/sample_rate times, to maintain the computational cost")
     # * other dataset params
-    parser.add_argument('--dataset_file', default='cocodown')
+    parser.add_argument('--dataset_file', default='exdark')# change
     parser.add_argument('--coco_path',default='/root/autodl-tmp/COCO', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
     parser.add_argument('--model', required=True, type=str, help='model name')
-    parser.add_argument('--output_dir', default=None,
+    parser.add_argument('--output_dir', default='/root/autodl-tmp/outputs/DE-DETR',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=None, type=int)
     parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--pretrain', default='./dedetrcheckpoint.pth', help='pretrain from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
@@ -165,6 +170,7 @@ def main(args):
         assert args.masks, "Frozen training is meant for segmentation only"
     if args.ms_roi is False:
         assert args.num_feature_levels == 1
+    args.pre_encoder = True
     print(args)
 
     device = torch.device(args.device)
@@ -215,14 +221,14 @@ def main(args):
                                   weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
-    #dataset_train = build_dataset(image_set='train', args=args)
-    #dataset_val = build_dataset(image_set='val', args=args)
-    dataset_train = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
-                                 ann_file= '/root/autodl-tmp/Exdark/main/train.txt',
-                                 transforms=make_train_transforms())
-    dataset_val = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
-                                 ann_file= '/root/autodl-tmp/Exdark/main/val.txt',
-                                 transforms=make_test_transforms())
+    dataset_train = build_dataset(image_set='train', args=args)
+    dataset_val = build_dataset(image_set='val', args=args)
+    # dataset_train = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
+    #                              ann_file= '/root/autodl-tmp/Exdark/main/train.txt',
+    #                              transforms=make_train_transforms())
+    # dataset_val = ExdarkDetection(img_prefix='/root/autodl-tmp/Exdark/JPEGImages/IMGS',
+    #                              ann_file= '/root/autodl-tmp/Exdark/main/val.txt',
+    #                              transforms=make_test_transforms())
     if args.distributed:
         if args.cache_mode:
             sampler_train = samplers.NodeDistributedSampler(dataset_train)
@@ -267,6 +273,56 @@ def main(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
+    
+    if args.pretrain:
+        print("load from pretrain model")
+        mycheckpoint = torch.load(args.pretrain, map_location='cpu')
+        #print("checkpoint",checkpoint)
+        # print("\n****print checkpoint")
+        # for k,v in checkpoint.items():
+        #     print("k:",k,"v:",type(v))
+        #     if k == 'model':
+        #         print("\n****print model")
+        #         for k,v in checkpoint['model'].items():
+        #             print("k:",k,"v.shape:",v.shape)
+        mymodel_dict = model_without_ddp.state_dict()
+        #print("mymodel_dict",mymodel_dict)
+        # print("\n****print mymodel_dict")
+        # for k,v in mymodel_dict.items():
+        #     print("k:",k,"v.shape:",v.shape)
+        mycheckpoint_model = mycheckpoint['model']
+        mycheckpoint_model_new = {}
+        miss_model_new = {}
+        for k,v in mycheckpoint_model.items():
+            if k in mymodel_dict and v.shape == mymodel_dict[k].shape:
+                mycheckpoint_model_new[k] = v
+            else:
+                miss_model_new[k] = v
+
+        #checkpoint = {k : v for k,v in checkpoint.items() if k in mymodel_dict}
+        #print("checkpoint",checkpoint)
+        # print("\n****loaded weight")
+        # for k,v in mycheckpoint_model_new.items():
+        #     print(k,v.shape)
+        print("\n****miss_model_new weight")
+        for k,v in miss_model_new.items():
+            print(k,v.shape)
+        mymodel_dict.update(mycheckpoint_model_new)
+        model_without_ddp.load_state_dict(mymodel_dict)
+        # if not args.eval and 'optimizer' in mycheckpoint and 'lr_scheduler' in mycheckpoint and 'epoch' in mycheckpoint:
+        #     newoptimizer = {}
+        #     for k,v in mycheckpoint['optimizer'].items(): 
+        #         if k in optimizer and v.shape == optimizer[k].shape:
+        #             newoptimizer[k] = v
+        #     newlr_scheduler = {}
+        #     for k,v in mycheckpoint['lr_scheduler'].items(): 
+        #         if k in lr_scheduler and v.shape == lr_scheduler[k].shape:
+        #             newlr_scheduler[k] = v
+        #     #optimizer.load_state_dict(mycheckpoint['optimizer'])
+        #     #lr_scheduler.load_state_dict(mycheckpoint['lr_scheduler'])
+        #     optimizer.load_state_dict(newoptimizer)
+        #     lr_scheduler.load_state_dict(newlr_scheduler)
+        #     args.start_epoch = mycheckpoint['epoch'] + 1
 
     if args.eval:
         test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
@@ -274,6 +330,12 @@ def main(args):
         if args.output_dir:
             utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
         return
+    print("test evaluate")
+    test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
+                                              data_loader_val, base_ds, device, args.output_dir)
+    if args.output_dir:
+        utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
+    #return
 
     print("Start training")
     start_time = time.time()
@@ -302,7 +364,7 @@ def main(args):
         test_stats, coco_evaluator = evaluate(
             model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
         )
-
+        print("coco_evaluator.coco_eval",coco_evaluator.coco_eval)
         results = coco_evaluator.coco_eval['bbox'].stats
         if utils.get_rank() == 0 and args.wandb:
             info = {

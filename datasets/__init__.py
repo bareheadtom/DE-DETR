@@ -12,7 +12,7 @@ from .torchvision_datasets import CocoDetection
 
 from .coco import RepeatDataset
 from .coco import build as build_coco
-from .coco import build_downsampled_coco
+from .coco import build_downsampled_coco,build_exdark
 from .coco import build_cityscapes_cocostyle
 
 
@@ -29,6 +29,9 @@ def get_coco_api_from_dataset(dataset):
 def build_dataset(image_set, args):
     if args.dataset_file == 'coco':
         return build_coco(image_set, args)
+    if args.dataset_file == 'exdark':
+        print("build_exdark called\n")
+        return build_exdark(image_set, args)
     if args.dataset_file == 'cocodown':
         return build_downsampled_coco(image_set, args)
     if args.dataset_file == 'cityscapes':

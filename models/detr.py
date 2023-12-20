@@ -19,7 +19,7 @@ from .matcher import build_matcher
 from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
                            dice_loss, sigmoid_focal_loss)
 from .transformer import build_transformer, MLP
-
+from .IAT.model import IAT
 
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
@@ -27,7 +27,7 @@ def _get_clones(module, N):
 
 class DETR(nn.Module):
     """ This is the DETR module that performs object detection """
-    def __init__(self, backbone, transformer, num_classes, num_queries, aux_loss=False,
+    def __init__(self, backbone, transformer, num_classes, num_queries,pre_encoder = None, aux_loss=False,
                  box_refine=False, num_feature_levels=3, init_ref_dim=2):
         """ Initializes the model.
         Parameters:
@@ -41,6 +41,7 @@ class DETR(nn.Module):
         super().__init__()
         self.num_queries = num_queries
         self.transformer = transformer
+        self.pre_encoder = pre_encoder
         hidden_dim = transformer.d_model
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
@@ -116,6 +117,11 @@ class DETR(nn.Module):
         """
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
+        if self.pre_encoder != None:
+            #print("preencoder",samples.tensors.shape)
+            _, _, x = self.pre_encoder(samples.tensors)
+            samples.tensors = x
+            #print("after preencoder",samples.tensors.shape)
         features, pos = self.backbone(samples)
 
         # modified from deformable detr
@@ -473,6 +479,7 @@ def build(args):
     dataset2numcls = {
         'coco': 91, 'coco_panoptic': 250,
         'cityscapes': 9, 'voc': 20,
+        'exdark':13
     }
     if args.dataset_file in dataset2numcls.keys():
         num_classes = dataset2numcls[args.dataset_file]
@@ -486,11 +493,30 @@ def build(args):
 
     transformer = build_transformer(args)
 
+    pre_encoder = None
+    if args.pre_encoder:
+        initfcfg = dict(type='Pretrained',checkpoint='/root/autodl-tmp/projects/Illumination-Adaptive-Transformer/IAT_high/IAT_mmdetection/LOL_pretrain.pth')
+        checkpath = '/root/autodl-tmp/projects/Illumination-Adaptive-Transformer/IAT_high/IAT_mmdetection/LOL_pretrain.pth'
+        pre_encoder = IAT(in_dim=3, with_global=True,init_cfg=initfcfg)
+        precheckpoint = torch.load(checkpath, map_location='cpu')
+        mystat = pre_encoder.state_dict()
+        precheckpoint_new = {}
+        precheckpoint_miss = {}
+        for k, v in precheckpoint.items():
+            if k in mystat and v.shape == mystat[k].shape:
+                precheckpoint_new[k] = v
+            else:
+                precheckpoint_miss[k] = v
+        print("miss pre_encoder precheckpoint_miss",precheckpoint_miss)
+        mystat.update(precheckpoint_new)
+        pre_encoder.load_state_dict(mystat)
+
     model = DETR(
         backbone,
         transformer,
         num_classes=num_classes,
         num_queries=args.num_queries,
+        pre_encoder=pre_encoder,
         aux_loss=args.aux_loss,
         box_refine=args.box_refine,
         num_feature_levels=args.num_feature_levels,
